@@ -747,6 +747,7 @@ export interface PodExecResponse {
   stdout: string
   stderr: string
   truncated: boolean
+  exitCode: number
 }
 
 export type WorkloadRevisionResourceType =

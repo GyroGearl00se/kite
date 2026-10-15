@@ -1,6 +1,8 @@
 package resources
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -8,8 +10,38 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilexec "k8s.io/client-go/util/exec"
 	metricsv1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 )
+
+func TestPodExecExitCode(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantCode  int
+		wantFound bool
+	}{
+		{
+			name:      "wrapped process exit",
+			err:       fmt.Errorf("failed to stream execution: %w", utilexec.CodeExitError{Err: errors.New("command failed"), Code: 2}),
+			wantCode:  2,
+			wantFound: true,
+		},
+		{
+			name: "transport error",
+			err:  errors.New("connection refused"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, found := podExecExitCode(tt.err)
+			if code != tt.wantCode || found != tt.wantFound {
+				t.Fatalf("podExecExitCode() = (%d, %v), want (%d, %v)", code, found, tt.wantCode, tt.wantFound)
+			}
+		})
+	}
+}
 
 func TestParseLsOutput(t *testing.T) {
 	output := `

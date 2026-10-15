@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apimachinery/pkg/watch"
+	utilexec "k8s.io/client-go/util/exec"
 	"k8s.io/klog/v2"
 	metricsv1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -53,6 +54,7 @@ type PodExecResponse struct {
 	Stdout    string `json:"stdout"`
 	Stderr    string `json:"stderr"`
 	Truncated bool   `json:"truncated"`
+	ExitCode  int    `json:"exitCode"`
 }
 
 type podExecOutputLimit struct {
@@ -347,6 +349,14 @@ func validatePodExecRequest(request PodExecRequest) error {
 	return nil
 }
 
+func podExecExitCode(err error) (int, bool) {
+	var exitErr utilexec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitStatus(), true
+	}
+	return 0, false
+}
+
 func (h *PodHandler) Exec(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64*1024)
 	var request PodExecRequest
@@ -374,6 +384,15 @@ func (h *PodHandler) Exec(c *gin.Context) {
 		Stderr:        stderr,
 	})
 	if err != nil {
+		if exitCode, ok := podExecExitCode(err); ok && ctx.Err() == nil {
+			c.JSON(http.StatusOK, PodExecResponse{
+				Stdout:    stdout.buffer.String(),
+				Stderr:    stderr.buffer.String(),
+				Truncated: limit.truncated,
+				ExitCode:  exitCode,
+			})
+			return
+		}
 		status := http.StatusInternalServerError
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			status = http.StatusGatewayTimeout
@@ -385,6 +404,7 @@ func (h *PodHandler) Exec(c *gin.Context) {
 		Stdout:    stdout.buffer.String(),
 		Stderr:    stderr.buffer.String(),
 		Truncated: limit.truncated,
+		ExitCode:  0,
 	})
 }
 
