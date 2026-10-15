@@ -38,16 +38,17 @@ type PodHandler struct {
 }
 
 const (
-	maxPodExecTimeout = 15 * time.Minute
-	maxPodExecOutput  = 1 << 20
-	maxPodExecArgs    = 128
-	maxPodExecArgSize = 4096
+	defaultPodExecTimeoutSeconds = 60
+	maxPodExecTimeout            = 15 * time.Minute
+	maxPodExecOutput             = 1 << 20
+	maxPodExecArgs               = 128
+	maxPodExecArgSize            = 4096
 )
 
 type PodExecRequest struct {
 	Container      string   `json:"container"`
 	Command        []string `json:"command"`
-	TimeoutSeconds int      `json:"timeoutSeconds"`
+	TimeoutSeconds *int     `json:"timeoutSeconds"`
 }
 
 type PodExecResponse struct {
@@ -343,10 +344,17 @@ func validatePodExecRequest(request PodExecRequest) error {
 			return fmt.Errorf("command arguments cannot exceed %d bytes", maxPodExecArgSize)
 		}
 	}
-	if request.TimeoutSeconds <= 0 || request.TimeoutSeconds > int(maxPodExecTimeout/time.Second) {
+	if request.TimeoutSeconds == nil || *request.TimeoutSeconds <= 0 || *request.TimeoutSeconds > int(maxPodExecTimeout/time.Second) {
 		return fmt.Errorf("timeoutSeconds must be between 1 and %d", int(maxPodExecTimeout/time.Second))
 	}
 	return nil
+}
+
+func applyPodExecRequestDefaults(request *PodExecRequest) {
+	if request.TimeoutSeconds == nil {
+		timeoutSeconds := defaultPodExecTimeoutSeconds
+		request.TimeoutSeconds = &timeoutSeconds
+	}
 }
 
 func podExecExitCode(err error) (int, bool) {
@@ -364,12 +372,13 @@ func (h *PodHandler) Exec(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid exec request: %v", err)})
 		return
 	}
+	applyPodExecRequestDefaults(&request)
 	if err := validatePodExecRequest(request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), time.Duration(request.TimeoutSeconds)*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), time.Duration(*request.TimeoutSeconds)*time.Second)
 	defer cancel()
 	limit := &podExecOutputLimit{remaining: maxPodExecOutput}
 	stdout := &podExecOutputWriter{limit: limit}

@@ -740,7 +740,7 @@ export interface ResourceHistoryResponse {
 export interface PodExecRequest {
   command: string[]
   container?: string
-  timeoutSeconds: number
+  timeoutSeconds?: number
 }
 
 export interface PodExecResponse {

@@ -67,6 +67,9 @@ ignored line
 }
 
 func TestValidatePodExecRequest(t *testing.T) {
+	timeoutSeconds := func(seconds int) *int {
+		return &seconds
+	}
 	tests := []struct {
 		name    string
 		request PodExecRequest
@@ -74,36 +77,36 @@ func TestValidatePodExecRequest(t *testing.T) {
 	}{
 		{
 			name:    "valid command",
-			request: PodExecRequest{Command: []string{"echo", "hello"}, TimeoutSeconds: 30},
+			request: PodExecRequest{Command: []string{"echo", "hello"}, TimeoutSeconds: timeoutSeconds(30)},
 		},
 		{
 			name:    "missing command",
-			request: PodExecRequest{TimeoutSeconds: 30},
+			request: PodExecRequest{TimeoutSeconds: timeoutSeconds(30)},
 			wantErr: true,
 		},
 		{
 			name:    "blank executable",
-			request: PodExecRequest{Command: []string{" "}, TimeoutSeconds: 30},
+			request: PodExecRequest{Command: []string{" "}, TimeoutSeconds: timeoutSeconds(30)},
 			wantErr: true,
 		},
 		{
 			name:    "too many arguments",
-			request: PodExecRequest{Command: make([]string, maxPodExecArgs+1), TimeoutSeconds: 30},
+			request: PodExecRequest{Command: make([]string, maxPodExecArgs+1), TimeoutSeconds: timeoutSeconds(30)},
 			wantErr: true,
 		},
 		{
 			name:    "too long argument",
-			request: PodExecRequest{Command: []string{"echo", strings.Repeat("x", maxPodExecArgSize+1)}, TimeoutSeconds: 30},
+			request: PodExecRequest{Command: []string{"echo", strings.Repeat("x", maxPodExecArgSize+1)}, TimeoutSeconds: timeoutSeconds(30)},
 			wantErr: true,
 		},
 		{
 			name:    "timeout zero",
-			request: PodExecRequest{Command: []string{"true"}, TimeoutSeconds: 0},
+			request: PodExecRequest{Command: []string{"true"}, TimeoutSeconds: timeoutSeconds(0)},
 			wantErr: true,
 		},
 		{
 			name:    "timeout above maximum",
-			request: PodExecRequest{Command: []string{"true"}, TimeoutSeconds: int(maxPodExecTimeout/time.Second) + 1},
+			request: PodExecRequest{Command: []string{"true"}, TimeoutSeconds: timeoutSeconds(int(maxPodExecTimeout/time.Second) + 1)},
 			wantErr: true,
 		},
 	}
@@ -115,6 +118,18 @@ func TestValidatePodExecRequest(t *testing.T) {
 				t.Fatalf("validatePodExecRequest() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestApplyPodExecRequestDefaults(t *testing.T) {
+	request := PodExecRequest{Command: []string{"echo", "hello"}}
+	applyPodExecRequestDefaults(&request)
+
+	if request.TimeoutSeconds == nil || *request.TimeoutSeconds != defaultPodExecTimeoutSeconds {
+		t.Fatalf("timeoutSeconds = %v, want %d", request.TimeoutSeconds, defaultPodExecTimeoutSeconds)
+	}
+	if err := validatePodExecRequest(request); err != nil {
+		t.Fatalf("validatePodExecRequest() with default timeout returned error: %v", err)
 	}
 }
 
