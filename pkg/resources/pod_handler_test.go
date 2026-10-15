@@ -1,7 +1,9 @@
 package resources
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -29,6 +31,77 @@ ignored line
 	}
 	if files[1].Name != "alpha" || files[1].IsDir {
 		t.Fatalf("expected file second, got %#v", files[1])
+	}
+}
+
+func TestValidatePodExecRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		request PodExecRequest
+		wantErr bool
+	}{
+		{
+			name:    "valid command",
+			request: PodExecRequest{Command: []string{"echo", "hello"}, TimeoutSeconds: 30},
+		},
+		{
+			name:    "missing command",
+			request: PodExecRequest{TimeoutSeconds: 30},
+			wantErr: true,
+		},
+		{
+			name:    "blank executable",
+			request: PodExecRequest{Command: []string{" "}, TimeoutSeconds: 30},
+			wantErr: true,
+		},
+		{
+			name:    "too many arguments",
+			request: PodExecRequest{Command: make([]string, maxPodExecArgs+1), TimeoutSeconds: 30},
+			wantErr: true,
+		},
+		{
+			name:    "too long argument",
+			request: PodExecRequest{Command: []string{"echo", strings.Repeat("x", maxPodExecArgSize+1)}, TimeoutSeconds: 30},
+			wantErr: true,
+		},
+		{
+			name:    "timeout zero",
+			request: PodExecRequest{Command: []string{"true"}, TimeoutSeconds: 0},
+			wantErr: true,
+		},
+		{
+			name:    "timeout above maximum",
+			request: PodExecRequest{Command: []string{"true"}, TimeoutSeconds: int(maxPodExecTimeout/time.Second) + 1},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePodExecRequest(tt.request)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validatePodExecRequest() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestPodExecOutputWriterCapsCombinedOutput(t *testing.T) {
+	limit := &podExecOutputLimit{remaining: 5}
+	stdout := &podExecOutputWriter{limit: limit}
+	stderr := &podExecOutputWriter{limit: limit}
+
+	if _, err := stdout.Write([]byte("1234")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stderr.Write([]byte("5678")); err != nil {
+		t.Fatal(err)
+	}
+	if got := stdout.buffer.String() + stderr.buffer.String(); got != "12345" {
+		t.Fatalf("combined output = %q, want %q", got, "12345")
+	}
+	if !limit.truncated {
+		t.Fatal("expected output to be marked truncated")
 	}
 }
 
